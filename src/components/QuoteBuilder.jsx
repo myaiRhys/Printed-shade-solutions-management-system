@@ -39,6 +39,7 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
   const [showClientDropdown, setShowClientDropdown] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [savedJobNumber, setSavedJobNumber] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -157,6 +158,7 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
     setFormData(initialFormState);
     setError('');
     setSaveSuccess(false);
+    setSavedJobNumber('');
     if (onClearClient) onClearClient();
   };
 
@@ -252,13 +254,15 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
     saveJob(jobData);
 
     setSaveSuccess(true);
+    setSavedJobNumber(quoteNumber);
     setError('');
 
     // Reset form after short delay
     setTimeout(() => {
       handleClearForm();
+      setSavedJobNumber('');
       if (onQuoteSaved) onQuoteSaved();
-    }, 2000);
+    }, 3000);
   };
 
   const handleGeneratePDF = () => {
@@ -305,7 +309,9 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
           </svg>
           <div className="alert-content">
             <div className="alert-title" style={{ color: '#1E8449' }}>Quote Saved Successfully!</div>
-            <div className="alert-text">The quote has been saved and added to the Job Tracker.</div>
+            <div className="alert-text">
+              Job <strong>{savedJobNumber}</strong> has been created. View it in the Job Tracker.
+            </div>
           </div>
         </div>
       )}
@@ -587,7 +593,10 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
 
           {/* Spacing Calculator */}
           <h3 style={{ fontSize: '16px', fontWeight: '600', marginTop: '24px', marginBottom: '16px', color: '#2A9D8F' }}>
-            Spacing Calculator
+            Roll Layout Calculator
+            <span style={{ fontSize: '12px', fontWeight: 'normal', color: '#666', marginLeft: '8px' }}>
+              (1 roll = {PRICING.rollLength}m)
+            </span>
           </h3>
 
           <div className="form-row">
@@ -603,7 +612,7 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
                 min="0.1"
                 step="0.1"
               />
-              <div className="form-hint">Length of each print along the roll</div>
+              <div className="form-hint">Length of each print along the {PRICING.rollLength}m roll</div>
             </div>
             <div className="form-group">
               <label className="form-label">Prints Per Roll</label>
@@ -617,7 +626,7 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
                 min="1"
                 step="1"
               />
-              <div className="form-hint">How many prints fit on a {PRICING.rollLength}m roll</div>
+              <div className="form-hint">How many prints to fit on each {PRICING.rollLength}m roll</div>
             </div>
           </div>
 

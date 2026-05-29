@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getSettings, saveSettings, exportAllData, importData } from '../utils/storage';
+import { getSettings, saveSettings, exportAllData, importData, getJobs, getClients, getQuotes } from '../utils/storage';
 
 export default function Settings() {
   const [formData, setFormData] = useState({
@@ -16,11 +16,21 @@ export default function Settings() {
   });
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [activeTab, setActiveTab] = useState('company');
+  const [storageStats, setStorageStats] = useState({ jobs: 0, clients: 0, quotes: 0 });
 
   useEffect(() => {
     const settings = getSettings();
     setFormData(settings);
+    refreshStorageStats();
   }, []);
+
+  const refreshStorageStats = () => {
+    setStorageStats({
+      jobs: getJobs().length,
+      clients: getClients().length,
+      quotes: getQuotes().length
+    });
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -284,6 +294,35 @@ export default function Settings() {
       {/* Data Management Tab */}
       {activeTab === 'data' && (
         <div>
+          {/* Storage Status */}
+          <div className="card" style={{ marginBottom: '24px', background: '#E8F6F4' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '600', margin: 0 }}>
+                Storage Status
+              </h3>
+              <button className="btn btn-secondary btn-sm" onClick={refreshStorageStats}>
+                Refresh
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+              <div style={{ textAlign: 'center', padding: '12px', background: 'white', borderRadius: '8px' }}>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#2A9D8F' }}>{storageStats.jobs}</div>
+                <div style={{ fontSize: '13px', color: '#666' }}>Jobs</div>
+              </div>
+              <div style={{ textAlign: 'center', padding: '12px', background: 'white', borderRadius: '8px' }}>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#2A9D8F' }}>{storageStats.clients}</div>
+                <div style={{ fontSize: '13px', color: '#666' }}>Clients</div>
+              </div>
+              <div style={{ textAlign: 'center', padding: '12px', background: 'white', borderRadius: '8px' }}>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#2A9D8F' }}>{storageStats.quotes}</div>
+                <div style={{ fontSize: '13px', color: '#666' }}>Quotes</div>
+              </div>
+            </div>
+            <p style={{ fontSize: '12px', color: '#666', marginTop: '12px', marginBottom: 0 }}>
+              Data is stored in your browser's localStorage. It persists until you clear browser data or use "Clear All Data" below.
+            </p>
+          </div>
+
           <div className="card" style={{ marginBottom: '24px' }}>
             <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '20px' }}>
               Export Data
