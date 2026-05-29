@@ -17,7 +17,6 @@ const initialFormState = {
   contactPerson: '',
   clientEmail: '',
   clientPhone: '',
-  linearMetres: '',
   printHeight: PRICING.defaultPrintHeight.toString(),
   numberOfColours: '1',
   printSize: PRINT_SIZES.MEDIUM,
@@ -28,9 +27,11 @@ const initialFormState = {
   deadline: '',
   layoutNotes: '',
   specialInstructions: '',
-  // Spacing calculator fields
+  // Roll layout fields (jobs are thought of by the roll)
   printLength: '',
-  printsPerRoll: ''
+  printsPerRoll: '',
+  rollLength: PRICING.rollLength.toString(),
+  clothWidth: PRICING.clothWidth.toString()
 };
 
 export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClient }) {
@@ -88,11 +89,11 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
   }, [clients, clientSearch]);
 
   const quote = useMemo(() => {
-    const linearMetres = parseFloat(formData.linearMetres) || 0;
     const numberOfPrints = parseInt(formData.numberOfPrints) || 0;
     const numberOfColours = parseInt(formData.numberOfColours) || 1;
 
-    if (numberOfPrints < PRICING.minimumPrints || linearMetres <= 0) {
+    // Wait for a minimum order before showing pricing
+    if (numberOfPrints < PRICING.minimumPrints) {
       return null;
     }
 
@@ -101,13 +102,17 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
       inkCoverage: formData.inkCoverage,
       numberOfColours,
       numberOfPrints,
-      linearMetres,
+      printLength: parseFloat(formData.printLength) || 0,
+      printHeight: parseFloat(formData.printHeight) || 0,
+      printsPerRoll: parseInt(formData.printsPerRoll) || 0,
       clientType: formData.clientType,
-      isClientSuppliedCloth: formData.clothSupply === CLOTH_SUPPLY.CLIENT
+      isClientSuppliedCloth: formData.clothSupply === CLOTH_SUPPLY.CLIENT,
+      rollLength: parseFloat(formData.rollLength) || PRICING.rollLength,
+      clothWidth: parseFloat(formData.clothWidth) || PRICING.clothWidth
     });
   }, [formData]);
 
-  // Spacing calculator
+  // Roll layout calculator
   const spacing = useMemo(() => {
     const printLength = parseFloat(formData.printLength) || 0;
     const printHeight = parseFloat(formData.printHeight) || 0;
@@ -122,16 +127,18 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
       printLength,
       printHeight,
       totalPrints,
-      printsPerRoll
+      printsPerRoll,
+      rollLength: parseFloat(formData.rollLength) || PRICING.rollLength,
+      clothWidth: parseFloat(formData.clothWidth) || PRICING.clothWidth
     });
-  }, [formData.printLength, formData.printHeight, formData.numberOfPrints, formData.printsPerRoll]);
+  }, [formData.printLength, formData.printHeight, formData.numberOfPrints, formData.printsPerRoll, formData.rollLength, formData.clothWidth]);
 
   // Suggestions for prints per roll
   const printSuggestions = useMemo(() => {
     const printLength = parseFloat(formData.printLength) || 0;
     if (printLength <= 0) return [];
-    return suggestPrintsPerRoll(printLength);
-  }, [formData.printLength]);
+    return suggestPrintsPerRoll(printLength, parseFloat(formData.rollLength) || PRICING.rollLength);
+  }, [formData.printLength, formData.rollLength]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -166,11 +173,12 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
     if (!formData.clientName.trim()) {
       return 'Client name is required';
     }
-    if (!formData.linearMetres || parseFloat(formData.linearMetres) <= 0) {
-      return 'Linear metres must be greater than 0';
-    }
     if (!formData.numberOfPrints || parseInt(formData.numberOfPrints) < PRICING.minimumPrints) {
       return `Minimum order is ${PRICING.minimumPrints} prints`;
+    }
+    if (formData.clothSupply === CLOTH_SUPPLY.PSS &&
+        (!formData.printLength || !formData.printsPerRoll)) {
+      return 'Enter print length and prints per roll so cloth can be calculated';
     }
     return null;
   };
@@ -195,11 +203,14 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
       quoteNumber,
       ...formData,
       numberOfColours: parseInt(formData.numberOfColours),
-      linearMetres: parseFloat(formData.linearMetres),
+      linearMetres: quote.breakdown.clothLinearMetres,
       printHeight: parseFloat(formData.printHeight),
       numberOfPrints: parseInt(formData.numberOfPrints),
       printLength: parseFloat(formData.printLength) || null,
       printsPerRoll: parseInt(formData.printsPerRoll) || null,
+      rollLength: parseFloat(formData.rollLength) || PRICING.rollLength,
+      clothWidth: parseFloat(formData.clothWidth) || PRICING.clothWidth,
+      rollsNeeded: quote.breakdown.rollsNeeded,
       spacing: spacing && spacing.isValid ? spacing : null,
       breakdown: quote.breakdown,
       createdAt: now
@@ -224,7 +235,7 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
       contactPerson: formData.contactPerson,
       clientEmail: formData.clientEmail,
       clientPhone: formData.clientPhone,
-      linearMetres: parseFloat(formData.linearMetres),
+      linearMetres: quote.breakdown.clothLinearMetres,
       printHeight: parseFloat(formData.printHeight),
       numberOfColours: parseInt(formData.numberOfColours),
       printSize: formData.printSize,
@@ -235,10 +246,15 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
       deadline: formData.deadline || null,
       layoutNotes: layoutNotes,
       specialInstructions: formData.specialInstructions,
-      // Spacing calculator data
+      // Roll layout data
       printLength: parseFloat(formData.printLength) || null,
       printsPerRoll: parseInt(formData.printsPerRoll) || null,
+      rollLength: parseFloat(formData.rollLength) || PRICING.rollLength,
+      clothWidth: parseFloat(formData.clothWidth) || PRICING.clothWidth,
+      rollsNeeded: quote.breakdown.rollsNeeded,
       spacing: spacing && spacing.isValid ? spacing : null,
+      // Full price breakdown so the quote/invoice PDF stays accurate later
+      breakdown: quote.breakdown,
       totalValue: quote.breakdown.total,
       depositAmount: quote.breakdown.deposit,
       balanceAmount: quote.breakdown.balance,
@@ -276,9 +292,12 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
       quoteNumber: 'PREVIEW',
       ...formData,
       numberOfColours: parseInt(formData.numberOfColours),
-      linearMetres: parseFloat(formData.linearMetres),
+      linearMetres: quote.breakdown.clothLinearMetres,
       printHeight: parseFloat(formData.printHeight),
       numberOfPrints: parseInt(formData.numberOfPrints),
+      printLength: parseFloat(formData.printLength) || null,
+      printsPerRoll: parseInt(formData.printsPerRoll) || null,
+      rollsNeeded: quote.breakdown.rollsNeeded,
       breakdown: quote.breakdown,
       createdAt: new Date().toISOString()
     };
@@ -330,7 +349,7 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '24px' }}>
+      <div className="quote-layout">
         {/* Form Section */}
         <div className="card">
           {/* Client Details */}
@@ -449,46 +468,19 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
             Job Specifications
           </h3>
 
-          <div className="form-row-3">
-            <div className="form-group">
-              <label className="form-label">Linear Metres *</label>
-              <input
-                type="number"
-                name="linearMetres"
-                className="form-input"
-                value={formData.linearMetres}
-                onChange={handleInputChange}
-                placeholder="e.g. 50"
-                min="1"
-                step="1"
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Print Height (m)</label>
-              <input
-                type="number"
-                name="printHeight"
-                className="form-input"
-                value={formData.printHeight}
-                onChange={handleInputChange}
-                placeholder="1.8"
-                min="0.1"
-                step="0.1"
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Number of Prints *</label>
-              <input
-                type="number"
-                name="numberOfPrints"
-                className="form-input"
-                value={formData.numberOfPrints}
-                onChange={handleInputChange}
-                placeholder={`Min ${PRICING.minimumPrints}`}
-                min={PRICING.minimumPrints}
-                step="1"
-              />
-            </div>
+          <div className="form-group">
+            <label className="form-label">Number of Prints *</label>
+            <input
+              type="number"
+              name="numberOfPrints"
+              className="form-input"
+              value={formData.numberOfPrints}
+              onChange={handleInputChange}
+              placeholder={`Min ${PRICING.minimumPrints}`}
+              min={PRICING.minimumPrints}
+              step="1"
+            />
+            <div className="form-hint">Total prints/logos for this job</div>
           </div>
 
           <div className="form-row-4">
@@ -551,82 +543,87 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
             </div>
           </div>
 
-          {/* Additional Details */}
+          {/* Roll Layout */}
           <h3 style={{ fontSize: '16px', fontWeight: '600', marginTop: '24px', marginBottom: '16px', color: '#2A9D8F' }}>
-            Additional Details
-          </h3>
-
-          <div className="form-group">
-            <label className="form-label">Deadline</label>
-            <input
-              type="date"
-              name="deadline"
-              className="form-input"
-              value={formData.deadline}
-              onChange={handleInputChange}
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Layout / Spacing Notes</label>
-            <textarea
-              name="layoutNotes"
-              className="form-textarea"
-              value={formData.layoutNotes}
-              onChange={handleInputChange}
-              placeholder="e.g. 5 prints per roll with 2m gaps"
-              rows="2"
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Special Instructions</label>
-            <textarea
-              name="specialInstructions"
-              className="form-textarea"
-              value={formData.specialInstructions}
-              onChange={handleInputChange}
-              placeholder="Any special requirements..."
-              rows="2"
-            />
-          </div>
-
-          {/* Spacing Calculator */}
-          <h3 style={{ fontSize: '16px', fontWeight: '600', marginTop: '24px', marginBottom: '16px', color: '#2A9D8F' }}>
-            Roll Layout Calculator
+            Roll Layout
             <span style={{ fontSize: '12px', fontWeight: 'normal', color: '#666', marginLeft: '8px' }}>
-              (1 roll = {PRICING.rollLength}m)
+              (cloth is charged by the roll)
             </span>
           </h3>
 
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Print Length (m)</label>
+              <label className="form-label">Print Length (m){formData.clothSupply === CLOTH_SUPPLY.PSS ? ' *' : ''}</label>
               <input
                 type="number"
                 name="printLength"
                 className="form-input"
                 value={formData.printLength}
                 onChange={handleInputChange}
-                placeholder="e.g. 5"
+                placeholder="e.g. 2"
                 min="0.1"
                 step="0.1"
               />
-              <div className="form-hint">Length of each print along the {PRICING.rollLength}m roll</div>
+              <div className="form-hint">Length of each print along the roll</div>
             </div>
             <div className="form-group">
-              <label className="form-label">Prints Per Roll</label>
+              <label className="form-label">Print Height (m)</label>
+              <input
+                type="number"
+                name="printHeight"
+                className="form-input"
+                value={formData.printHeight}
+                onChange={handleInputChange}
+                placeholder="1.8"
+                min="0.1"
+                step="0.1"
+              />
+              <div className="form-hint">Across the {formData.clothWidth || PRICING.clothWidth}m cloth width</div>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Prints Per Roll{formData.clothSupply === CLOTH_SUPPLY.PSS ? ' *' : ''}</label>
               <input
                 type="number"
                 name="printsPerRoll"
                 className="form-input"
                 value={formData.printsPerRoll}
                 onChange={handleInputChange}
-                placeholder="e.g. 8"
+                placeholder="e.g. 5"
                 min="1"
                 step="1"
               />
-              <div className="form-hint">How many prints to fit on each {PRICING.rollLength}m roll</div>
+              <div className="form-hint">How many prints fit on each roll</div>
+            </div>
+            <div className="form-row" style={{ gap: '12px' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Roll Length (m)</label>
+                <input
+                  type="number"
+                  name="rollLength"
+                  className="form-input"
+                  value={formData.rollLength}
+                  onChange={handleInputChange}
+                  placeholder={PRICING.rollLength.toString()}
+                  min="1"
+                  step="1"
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Cloth Width (m)</label>
+                <input
+                  type="number"
+                  name="clothWidth"
+                  className="form-input"
+                  value={formData.clothWidth}
+                  onChange={handleInputChange}
+                  placeholder={PRICING.clothWidth.toString()}
+                  min="0.1"
+                  step="0.1"
+                />
+              </div>
             </div>
           </div>
 
@@ -664,7 +661,8 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px', color: '#15803D' }}>
                 <div>Gap between prints: <strong>{spacing.gapSize}m</strong></div>
                 <div>Rolls needed: <strong>{spacing.rollsNeeded}</strong></div>
-                <div>Efficiency: <strong>{spacing.efficiency}%</strong></div>
+                <div>Cloth required: <strong>{spacing.clothLinearMetres}m</strong></div>
+                <div>Print efficiency: <strong>{spacing.efficiency}%</strong></div>
                 {spacing.topBottomMargin > 0 && (
                   <div>Top/bottom margin: <strong>{spacing.topBottomMargin}cm</strong></div>
                 )}
@@ -679,11 +677,51 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
               </div>
             </div>
           )}
+
+          {/* Additional Details */}
+          <h3 style={{ fontSize: '16px', fontWeight: '600', marginTop: '24px', marginBottom: '16px', color: '#2A9D8F' }}>
+            Additional Details
+          </h3>
+
+          <div className="form-group">
+            <label className="form-label">Deadline</label>
+            <input
+              type="date"
+              name="deadline"
+              className="form-input"
+              value={formData.deadline}
+              onChange={handleInputChange}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Layout / Spacing Notes</label>
+            <textarea
+              name="layoutNotes"
+              className="form-textarea"
+              value={formData.layoutNotes}
+              onChange={handleInputChange}
+              placeholder="Auto-filled from the roll layout above; add any extra notes"
+              rows="2"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Special Instructions</label>
+            <textarea
+              name="specialInstructions"
+              className="form-textarea"
+              value={formData.specialInstructions}
+              onChange={handleInputChange}
+              placeholder="Any special requirements..."
+              rows="2"
+            />
+          </div>
         </div>
 
         {/* Quote Summary */}
         <div>
-          <div className="card" style={{ position: 'sticky', top: '24px' }}>
+          <div className="card quote-summary-card">
             <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '20px' }}>
               Quote Summary
             </h3>
@@ -730,7 +768,7 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
 
                   {quote.breakdown.clothCost > 0 && (
                     <div className="quote-summary-row">
-                      <span className="quote-summary-label">Cloth ({quote.breakdown.clothMetres}m @ R{PRICING.clothPricePerMetre}/m)</span>
+                      <span className="quote-summary-label">Cloth ({quote.breakdown.rollsNeeded} roll{quote.breakdown.rollsNeeded !== 1 ? 's' : ''} = {quote.breakdown.clothLinearMetres}m @ R{PRICING.clothPricePerMetre}/m)</span>
                       <span className="quote-summary-value">{formatCurrency(quote.breakdown.clothCost)}</span>
                     </div>
                   )}

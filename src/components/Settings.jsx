@@ -304,7 +304,7 @@ export default function Settings() {
                 Refresh
               </button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+            <div className="mini-grid">
               <div style={{ textAlign: 'center', padding: '12px', background: 'white', borderRadius: '8px' }}>
                 <div style={{ fontSize: '24px', fontWeight: '700', color: '#2A9D8F' }}>{storageStats.jobs}</div>
                 <div style={{ fontSize: '13px', color: '#666' }}>Jobs</div>
@@ -392,7 +392,7 @@ export default function Settings() {
               Current pricing configuration (hardcoded in system):
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+            <div className="pricing-ref-grid">
               <div>
                 <h4 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#2A9D8F' }}>
                   Print Size Base Prices
@@ -471,6 +471,8 @@ export default function Settings() {
                 <table style={{ width: '100%', fontSize: '13px' }}>
                   <tbody>
                     <tr><td>Shade Cloth (PSS)</td><td style={{ textAlign: 'right' }}>R55/m</td></tr>
+                    <tr><td>Standard Roll</td><td style={{ textAlign: 'right' }}>50m × 1.8m</td></tr>
+                    <tr><td>Cloth Charged</td><td style={{ textAlign: 'right' }}>Per roll</td></tr>
                     <tr><td>VAT</td><td style={{ textAlign: 'right' }}>15%</td></tr>
                     <tr><td>Deposit</td><td style={{ textAlign: 'right' }}>50%</td></tr>
                     <tr><td>Min. Order</td><td style={{ textAlign: 'right' }}>5 prints</td></tr>

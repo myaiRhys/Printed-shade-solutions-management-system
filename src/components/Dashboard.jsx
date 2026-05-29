@@ -6,6 +6,7 @@ import { JOB_STATUSES } from '../utils/constants';
 export default function Dashboard({ onNavigate }) {
   const [stats, setStats] = useState(null);
   const [recentJobs, setRecentJobs] = useState([]);
+  const [allJobs, setAllJobs] = useState([]);
 
   useEffect(() => {
     loadData();
@@ -16,6 +17,7 @@ export default function Dashboard({ onNavigate }) {
     setStats(dashboardStats);
 
     const jobs = getJobs();
+    setAllJobs(jobs);
     const recent = jobs
       .filter(job => !['COMPLETE', 'CANCELLED'].includes(job.status))
       .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
@@ -270,9 +272,9 @@ export default function Dashboard({ onNavigate }) {
       </div>
 
       {/* Quick Stats by Status */}
-      <div style={{ marginTop: '24px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+      <div className="mini-grid" style={{ marginTop: '24px' }}>
         {Object.values(JOB_STATUSES).slice(0, 6).map(status => {
-          const jobs = getJobs().filter(j => j.status === status);
+          const jobs = allJobs.filter(j => j.status === status);
           return (
             <div
               key={status}

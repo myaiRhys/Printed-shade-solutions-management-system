@@ -116,14 +116,23 @@ export function generateQuotePDF(quote, settings, isInvoice = false) {
   doc.setFontSize(9);
 
   const jobDetails = [
-    ['Linear Metres:', `${quote.linearMetres}m`],
-    ['Print Height:', `${quote.printHeight}m`],
+    ['Number of Prints:', quote.numberOfPrints.toString()],
     ['Print Size:', quote.printSize],
     ['Number of Colours:', quote.numberOfColours.toString()],
     ['Ink Coverage:', quote.inkCoverage],
-    ['Number of Prints:', quote.numberOfPrints.toString()],
     ['Cloth Supply:', quote.clothSupply]
   ];
+
+  if (quote.printLength) {
+    jobDetails.push(['Print (L x H):', `${quote.printLength}m x ${quote.printHeight}m`]);
+  }
+  if (quote.printsPerRoll) {
+    jobDetails.push(['Prints / Roll:', quote.printsPerRoll.toString()]);
+  }
+  const rollsNeeded = quote.breakdown?.rollsNeeded || quote.rollsNeeded;
+  if (rollsNeeded) {
+    jobDetails.push(['Rolls Needed:', `${rollsNeeded} (${quote.breakdown?.clothLinearMetres || quote.linearMetres}m)`]);
+  }
 
   jobDetails.forEach((detail, index) => {
     doc.setFont('helvetica', 'normal');
@@ -134,7 +143,7 @@ export function generateQuotePDF(quote, settings, isInvoice = false) {
     doc.text(detail[1], margin + 50, yPos + (index * 6));
   });
 
-  yPos += 55;
+  yPos += (jobDetails.length * 6) + 13;
 
   // Line items table header
   doc.setFillColor(...primaryColor);
@@ -168,10 +177,13 @@ export function generateQuotePDF(quote, settings, isInvoice = false) {
     });
   }
 
-  // Cloth cost
+  // Cloth cost (charged by whole rolls consumed)
   if (quote.breakdown.clothCost > 0) {
+    const rolls = quote.breakdown.rollsNeeded;
+    const clothMetres = quote.breakdown.clothLinearMetres || quote.breakdown.clothMetres;
+    const rollLabel = rolls ? `${rolls} roll${rolls !== 1 ? 's' : ''} = ` : '';
     lineItems.push({
-      description: `Shade cloth supply (${quote.breakdown.clothMetres}m @ R${PRICING.clothPricePerMetre}/m)`,
+      description: `Shade cloth supply (${rollLabel}${clothMetres}m @ R${PRICING.clothPricePerMetre}/m)`,
       amount: quote.breakdown.clothCost
     });
   }
@@ -359,12 +371,13 @@ export function generateJobCardPDF(job) {
 
   // Specs grid
   const specs = [
-    ['Linear Metres', `${job.linearMetres}m`],
-    ['Print Height', `${job.printHeight || '1.8'}m`],
     ['Total Prints', job.numberOfPrints?.toString() || 'N/A'],
+    ['Print Size (L x H)', job.printLength ? `${job.printLength}m x ${job.printHeight || '1.8'}m` : `${job.printHeight || '1.8'}m high`],
+    ['Prints Per Roll', job.printsPerRoll?.toString() || 'N/A'],
+    ['Rolls Needed', job.rollsNeeded ? `${job.rollsNeeded} (${job.linearMetres}m)` : 'N/A'],
     ['Number of Colours', job.numberOfColours?.toString() || 'N/A'],
-    ['Print Size', job.printSize || 'N/A'],
     ['Ink Coverage', job.inkCoverage || 'N/A'],
+    ['Print Type', job.printSize || 'N/A'],
     ['Cloth Supply', job.clothSupply || 'PSS Supplied']
   ];
 

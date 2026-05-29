@@ -34,7 +34,18 @@ export function calculateScreenFees(clientType, numberOfColours) {
 }
 
 /**
- * Calculate cloth cost for PSS supplied cloth
+ * Calculate how many rolls a job consumes.
+ * Cloth comes on rolls, so the last roll is always counted in full.
+ */
+export function calculateRollsNeeded(totalPrints, printsPerRoll) {
+  if (!totalPrints || !printsPerRoll || printsPerRoll <= 0) return 0;
+  return Math.ceil(totalPrints / printsPerRoll);
+}
+
+/**
+ * Calculate cloth cost for PSS supplied cloth.
+ * Cloth is charged by whole rolls consumed, so linearMetres should be
+ * (rolls needed × roll length).
  */
 export function calculateClothCost(linearMetres, isClientSupplied) {
   if (isClientSupplied) {
@@ -44,16 +55,25 @@ export function calculateClothCost(linearMetres, isClientSupplied) {
 }
 
 /**
- * Full quote calculation
+ * Full quote calculation.
+ *
+ * Jobs are thought of by the roll: a standard roll is 50m long and 1.8m wide.
+ * The number of rolls needed is derived from the layout (how many prints fit on
+ * a roll) and cloth is charged by whole rolls consumed
+ * (rolls needed × roll length × price per metre).
  */
 export function calculateQuote({
   printSize,
   inkCoverage,
   numberOfColours,
   numberOfPrints,
-  linearMetres,
+  printLength,
+  printHeight,
+  printsPerRoll,
   clientType,
-  isClientSuppliedCloth
+  isClientSuppliedCloth,
+  rollLength = PRICING.rollLength,
+  clothWidth = PRICING.clothWidth
 }) {
   // Validate minimum order
   if (numberOfPrints < PRICING.minimumPrints) {
@@ -63,21 +83,51 @@ export function calculateQuote({
     };
   }
 
+  // Cloth quantity is driven by the roll layout. When PSS supplies the cloth we
+  // need the layout to work out how many rolls (and therefore how much cloth)
+  // the job consumes. When the client supplies cloth there is no cloth charge,
+  // so the layout is optional.
+  let rollsNeeded = 0;
+  let clothLinearMetres = 0;
+
+  if (!isClientSuppliedCloth) {
+    if (!printLength || printLength <= 0 || !printsPerRoll || printsPerRoll <= 0) {
+      return {
+        error: 'Enter print length and prints per roll to calculate cloth required',
+        isValid: false
+      };
+    }
+    if (printLength * printsPerRoll > rollLength) {
+      return {
+        error: `${printsPerRoll} prints × ${printLength}m = ${(printLength * printsPerRoll).toFixed(2)}m exceeds the ${rollLength}m roll`,
+        isValid: false
+      };
+    }
+    if (printHeight && printHeight > clothWidth) {
+      return {
+        error: `Print height ${printHeight}m exceeds the ${clothWidth}m cloth width`,
+        isValid: false
+      };
+    }
+    rollsNeeded = calculateRollsNeeded(numberOfPrints, printsPerRoll);
+    clothLinearMetres = rollsNeeded * rollLength;
+  }
+
   // Calculate unit price
   const unitPrice = calculateUnitPrice(printSize, inkCoverage, numberOfColours);
 
   // Calculate print subtotal
   const printSubtotal = unitPrice * numberOfPrints;
 
-  // Calculate volume discount
+  // Calculate volume discount (applied to the print cost only)
   const volumeDiscountRate = getVolumeDiscount(numberOfPrints);
   const volumeDiscountAmount = printSubtotal * volumeDiscountRate;
 
   // Calculate screen fees
   const screenFees = calculateScreenFees(clientType, numberOfColours);
 
-  // Calculate cloth cost
-  const clothCost = calculateClothCost(linearMetres, isClientSuppliedCloth);
+  // Calculate cloth cost (whole rolls consumed)
+  const clothCost = calculateClothCost(clothLinearMetres, isClientSuppliedCloth);
 
   // Calculate subtotal before VAT
   const subtotalBeforeDiscount = printSubtotal + screenFees + clothCost;
@@ -103,7 +153,10 @@ export function calculateQuote({
       volumeDiscountAmount,
       screenFees,
       clothCost,
-      clothMetres: isClientSuppliedCloth ? 0 : linearMetres,
+      clothMetres: clothLinearMetres,
+      clothLinearMetres,
+      rollsNeeded,
+      rollLength,
       clothPricePerMetre: PRICING.clothPricePerMetre,
       subtotal,
       vatRate: PRICING.vatRate,
@@ -191,28 +244,38 @@ export function calculateSpacing({
   const totalPrintLength = printLength * printsPerRoll;
   if (totalPrintLength > rollLength) {
     return {
-      error: `Prints too long for roll. ${printsPerRoll} prints × ${printLength}m = ${totalPrintLength}m exceeds ${rollLength}m roll`,
+      error: `Prints too long for roll. ${printsPerRoll} prints × ${printLength}m = ${totalPrintLength.toFixed(2)}m exceeds ${rollLength}m roll`,
+      isValid: false
+    };
+  }
+
+  // Print must fit across the width of the cloth
+  if (printHeight > clothWidth) {
+    return {
+      error: `Print height ${printHeight}m exceeds the ${clothWidth}m cloth width`,
       isValid: false
     };
   }
 
   // Calculate gap between prints (evenly distributed)
   // Formula: (rollLength - (printLength × printsPerRoll)) / (printsPerRoll + 1)
+  // Gaps sit at the start, between each print, and at the end of the roll.
   const totalGapSpace = rollLength - totalPrintLength;
-  const numberOfGaps = printsPerRoll + 1; // gaps at start, between each print, and at end
+  const numberOfGaps = printsPerRoll + 1;
   const gapSize = totalGapSpace / numberOfGaps;
 
-  // Calculate rolls needed
-  const rollsNeeded = Math.ceil(totalPrints / printsPerRoll);
+  // Calculate rolls needed and the cloth consumed (whole rolls)
+  const rollsNeeded = calculateRollsNeeded(totalPrints, printsPerRoll);
+  const clothLinearMetres = rollsNeeded * rollLength;
 
-  // Calculate margins if cloth is wider than print
+  // Calculate side margins if cloth is wider than the print
   let topBottomMargin = 0;
   if (clothWidth > printHeight) {
     topBottomMargin = ((clothWidth - printHeight) * 100) / 2; // in cm
   }
 
   // Generate layout description
-  let layoutDescription = `${printsPerRoll} prints per roll × ${printLength}m × ${printHeight}m each, ${gapSize.toFixed(2)}m gaps (${rollsNeeded} roll${rollsNeeded !== 1 ? 's' : ''} needed)`;
+  let layoutDescription = `${printsPerRoll} prints per roll × ${printLength}m × ${printHeight}m each, ${gapSize.toFixed(2)}m gaps (${rollsNeeded} roll${rollsNeeded !== 1 ? 's' : ''} = ${clothLinearMetres}m cloth)`;
 
   if (topBottomMargin > 0) {
     layoutDescription += `, Margins: ${topBottomMargin.toFixed(0)}cm top/bottom`;
@@ -225,14 +288,15 @@ export function calculateSpacing({
     printHeight,
     gapSize: parseFloat(gapSize.toFixed(2)),
     rollsNeeded,
+    clothLinearMetres,
     totalPrints,
     topBottomMargin: parseFloat(topBottomMargin.toFixed(1)),
     rollLength,
     clothWidth,
     layoutDescription,
-    // Additional useful calculations
-    usedSpacePerRoll: totalPrintLength,
-    wastedSpacePerRoll: parseFloat((rollLength - totalPrintLength - (gapSize * 2)).toFixed(2)), // excluding end gaps
+    // Cloth used for prints vs gaps (per roll)
+    printSpacePerRoll: parseFloat(totalPrintLength.toFixed(2)),
+    gapSpacePerRoll: parseFloat(totalGapSpace.toFixed(2)),
     efficiency: parseFloat(((totalPrintLength / rollLength) * 100).toFixed(1))
   };
 }

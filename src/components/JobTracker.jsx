@@ -104,25 +104,34 @@ export default function JobTracker({ onRefresh }) {
   const handleGenerateQuotePDF = () => {
     if (!selectedJob) return;
     const settings = getSettings();
+
+    // Prefer the breakdown saved with the job so the PDF matches the original
+    // quote exactly. Fall back to a derived breakdown for older jobs that were
+    // saved before the breakdown was stored.
+    const total = selectedJob.totalValue || 0;
+    const breakdown = selectedJob.breakdown || {
+      unitPrice: selectedJob.numberOfPrints ? total / selectedJob.numberOfPrints : 0,
+      numberOfPrints: selectedJob.numberOfPrints,
+      printSubtotal: total / (1 + 0.15),
+      volumeDiscountRate: 0,
+      volumeDiscountAmount: 0,
+      screenFees: 0,
+      clothCost: 0,
+      clothMetres: selectedJob.linearMetres || 0,
+      clothLinearMetres: selectedJob.linearMetres || 0,
+      rollsNeeded: selectedJob.rollsNeeded || 0,
+      subtotal: total / (1 + 0.15),
+      vatRate: 0.15,
+      vat: total - total / (1 + 0.15),
+      total,
+      deposit: selectedJob.depositAmount || 0,
+      balance: selectedJob.balanceAmount || 0
+    };
+
     const quoteData = {
       ...selectedJob,
       quoteNumber: selectedJob.jobNumber,
-      breakdown: {
-        unitPrice: selectedJob.totalValue / selectedJob.numberOfPrints || 0,
-        numberOfPrints: selectedJob.numberOfPrints,
-        printSubtotal: selectedJob.totalValue * 0.8 || 0, // Approximate
-        volumeDiscountRate: 0,
-        volumeDiscountAmount: 0,
-        screenFees: 0,
-        clothCost: 0,
-        clothMetres: 0,
-        subtotal: selectedJob.totalValue / 1.15 || 0,
-        vatRate: 0.15,
-        vat: selectedJob.totalValue - (selectedJob.totalValue / 1.15) || 0,
-        total: selectedJob.totalValue || 0,
-        deposit: selectedJob.depositAmount || 0,
-        balance: selectedJob.balanceAmount || 0
-      },
+      breakdown,
       createdAt: selectedJob.createdAt
     };
     const doc = generateQuotePDF(quoteData, settings);
@@ -193,7 +202,7 @@ export default function JobTracker({ onRefresh }) {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: selectedJob ? '1fr 450px' : '1fr', gap: '24px' }}>
+      <div className={selectedJob ? 'master-detail' : ''}>
         {/* Jobs Table */}
         <div className="card">
           {filteredJobs.length === 0 ? (
@@ -212,7 +221,7 @@ export default function JobTracker({ onRefresh }) {
                   <tr>
                     <th>Job #</th>
                     <th>Client</th>
-                    <th>Metres</th>
+                    <th>Cloth</th>
                     <th>Prints</th>
                     <th>Value</th>
                     <th>Status</th>
@@ -242,7 +251,13 @@ export default function JobTracker({ onRefresh }) {
                             <div style={{ fontSize: '12px', color: '#666' }}>{job.contactPerson}</div>
                           )}
                         </td>
-                        <td>{job.linearMetres}m</td>
+                        <td>
+                          {job.rollsNeeded
+                            ? `${job.rollsNeeded} roll${job.rollsNeeded !== 1 ? 's' : ''}`
+                            : job.clothSupply === 'Client Supplied'
+                              ? 'Client'
+                              : `${job.linearMetres || 0}m`}
+                        </td>
                         <td>{job.numberOfPrints}</td>
                         <td className="currency">{formatCurrency(job.totalValue || 0)}</td>
                         <td>
@@ -385,19 +400,31 @@ export default function JobTracker({ onRefresh }) {
             <div className="detail-section">
               <div className="detail-section-title">Job Specifications</div>
               <div className="detail-row">
-                <span className="detail-label">Linear Metres</span>
-                <span className="detail-value">{selectedJob.linearMetres}m</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-label">Print Height</span>
-                <span className="detail-value">{selectedJob.printHeight || 1.8}m</span>
-              </div>
-              <div className="detail-row">
                 <span className="detail-label">Number of Prints</span>
                 <span className="detail-value">{selectedJob.numberOfPrints}</span>
               </div>
+              {selectedJob.printLength && (
+                <div className="detail-row">
+                  <span className="detail-label">Print Size (L × H)</span>
+                  <span className="detail-value">{selectedJob.printLength}m × {selectedJob.printHeight || 1.8}m</span>
+                </div>
+              )}
+              {selectedJob.printsPerRoll && (
+                <div className="detail-row">
+                  <span className="detail-label">Prints / Roll</span>
+                  <span className="detail-value">{selectedJob.printsPerRoll}</span>
+                </div>
+              )}
               <div className="detail-row">
-                <span className="detail-label">Print Size</span>
+                <span className="detail-label">Rolls Needed</span>
+                <span className="detail-value">
+                  {selectedJob.rollsNeeded
+                    ? `${selectedJob.rollsNeeded} (${selectedJob.linearMetres}m)`
+                    : '-'}
+                </span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Print Type</span>
                 <span className="detail-value">{selectedJob.printSize || '-'}</span>
               </div>
               <div className="detail-row">
@@ -487,7 +514,7 @@ export default function JobTracker({ onRefresh }) {
                   placeholder="Add a note..."
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleAddNote()}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddNote()}
                   style={{ flex: 1 }}
                 />
                 <button className="btn btn-primary btn-sm" onClick={handleAddNote}>Add</button>

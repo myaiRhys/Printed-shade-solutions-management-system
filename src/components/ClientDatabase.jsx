@@ -53,7 +53,10 @@ export default function ClientDatabase({ onSelectForQuote }) {
       'PLATINUM': 'platinum',
       'VIP': 'vip',
       'REGULAR': 'regular',
-      'OPPORTUNITY': 'opportunity'
+      'REPEAT': 'repeat',
+      'OPPORTUNITY': 'opportunity',
+      'HIGH-POTENTIAL': 'high-potential',
+      'WATCH': 'watch'
     };
     return tierMap[tier] || 'opportunity';
   };
@@ -167,7 +170,7 @@ export default function ClientDatabase({ onSelectForQuote }) {
       </div>
 
       {/* Stats Summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+      <div className="mini-grid" style={{ marginBottom: '24px' }}>
         {Object.values(CLIENT_TIERS).map(tier => {
           const tierClients = clients.filter(c => c.tier === tier);
           const tierRevenue = tierClients.reduce((sum, c) => sum + (c.totalRevenue || 0), 0);
@@ -192,7 +195,7 @@ export default function ClientDatabase({ onSelectForQuote }) {
         })}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: selectedClient ? '1fr 400px' : '1fr', gap: '24px' }}>
+      <div className={selectedClient ? 'master-detail' : ''}>
         {/* Client List */}
         <div className="card">
           {filteredClients.length === 0 ? (
