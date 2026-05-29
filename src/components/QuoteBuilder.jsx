@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { getClients, saveJob, saveQuote, generateQuoteNumber, getSettings } from '../utils/storage';
-import { calculateQuote, formatCurrency, getClientTypeLabel, getScreenFeeDescription } from '../utils/pricing';
+import { calculateQuote, formatCurrency, getClientTypeLabel, getScreenFeeDescription, calculateSpacing, suggestPrintsPerRoll } from '../utils/pricing';
 import { generateQuotePDF, downloadPDF } from '../utils/pdfGenerator';
 import {
   PRINT_SIZES,
@@ -27,7 +27,10 @@ const initialFormState = {
   clientType: CLIENT_TYPES.NEW,
   deadline: '',
   layoutNotes: '',
-  specialInstructions: ''
+  specialInstructions: '',
+  // Spacing calculator fields
+  printLength: '',
+  printsPerRoll: ''
 };
 
 export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClient }) {
@@ -103,6 +106,32 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
     });
   }, [formData]);
 
+  // Spacing calculator
+  const spacing = useMemo(() => {
+    const printLength = parseFloat(formData.printLength) || 0;
+    const printHeight = parseFloat(formData.printHeight) || 0;
+    const totalPrints = parseInt(formData.numberOfPrints) || 0;
+    const printsPerRoll = parseInt(formData.printsPerRoll) || 0;
+
+    if (printLength <= 0 || printsPerRoll <= 0 || totalPrints <= 0) {
+      return null;
+    }
+
+    return calculateSpacing({
+      printLength,
+      printHeight,
+      totalPrints,
+      printsPerRoll
+    });
+  }, [formData.printLength, formData.printHeight, formData.numberOfPrints, formData.printsPerRoll]);
+
+  // Suggestions for prints per roll
+  const printSuggestions = useMemo(() => {
+    const printLength = parseFloat(formData.printLength) || 0;
+    if (printLength <= 0) return [];
+    return suggestPrintsPerRoll(printLength);
+  }, [formData.printLength]);
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -167,12 +196,21 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
       linearMetres: parseFloat(formData.linearMetres),
       printHeight: parseFloat(formData.printHeight),
       numberOfPrints: parseInt(formData.numberOfPrints),
+      printLength: parseFloat(formData.printLength) || null,
+      printsPerRoll: parseInt(formData.printsPerRoll) || null,
+      spacing: spacing && spacing.isValid ? spacing : null,
       breakdown: quote.breakdown,
       createdAt: now
     };
 
     // Save quote
     saveQuote(quoteData);
+
+    // Build layout notes with spacing calculator result
+    let layoutNotes = formData.layoutNotes;
+    if (spacing && spacing.isValid && spacing.layoutDescription) {
+      layoutNotes = spacing.layoutDescription + (formData.layoutNotes ? '\n' + formData.layoutNotes : '');
+    }
 
     // Create job in tracker with QUOTED status
     const jobData = {
@@ -193,8 +231,12 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
       clothSupply: formData.clothSupply,
       clientType: formData.clientType,
       deadline: formData.deadline || null,
-      layoutNotes: formData.layoutNotes,
+      layoutNotes: layoutNotes,
       specialInstructions: formData.specialInstructions,
+      // Spacing calculator data
+      printLength: parseFloat(formData.printLength) || null,
+      printsPerRoll: parseInt(formData.printsPerRoll) || null,
+      spacing: spacing && spacing.isValid ? spacing : null,
       totalValue: quote.breakdown.total,
       depositAmount: quote.breakdown.deposit,
       balanceAmount: quote.breakdown.balance,
@@ -542,6 +584,92 @@ export default function QuoteBuilder({ selectedClient, onQuoteSaved, onClearClie
               rows="2"
             />
           </div>
+
+          {/* Spacing Calculator */}
+          <h3 style={{ fontSize: '16px', fontWeight: '600', marginTop: '24px', marginBottom: '16px', color: '#2A9D8F' }}>
+            Spacing Calculator
+          </h3>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Print Length (m)</label>
+              <input
+                type="number"
+                name="printLength"
+                className="form-input"
+                value={formData.printLength}
+                onChange={handleInputChange}
+                placeholder="e.g. 5"
+                min="0.1"
+                step="0.1"
+              />
+              <div className="form-hint">Length of each print along the roll</div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Prints Per Roll</label>
+              <input
+                type="number"
+                name="printsPerRoll"
+                className="form-input"
+                value={formData.printsPerRoll}
+                onChange={handleInputChange}
+                placeholder="e.g. 8"
+                min="1"
+                step="1"
+              />
+              <div className="form-hint">How many prints fit on a {PRICING.rollLength}m roll</div>
+            </div>
+          </div>
+
+          {/* Print Suggestions */}
+          {printSuggestions.length > 0 && !formData.printsPerRoll && (
+            <div style={{ marginBottom: '16px', padding: '12px', background: '#E8F6F4', borderRadius: '8px' }}>
+              <div style={{ fontSize: '13px', fontWeight: '500', color: '#1F7A6E', marginBottom: '8px' }}>
+                Suggested layouts for {formData.printLength}m prints:
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {printSuggestions.slice(0, 5).map((suggestion) => (
+                  <button
+                    key={suggestion.printsPerRoll}
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ fontSize: '13px', padding: '6px 12px' }}
+                    onClick={() => setFormData(prev => ({ ...prev, printsPerRoll: suggestion.printsPerRoll.toString() }))}
+                  >
+                    {suggestion.printsPerRoll} per roll ({suggestion.gapSize}m gaps, {suggestion.efficiency}% efficient)
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Spacing Result */}
+          {spacing && spacing.isValid && (
+            <div style={{ padding: '16px', background: '#F0FDF4', border: '1px solid #86EFAC', borderRadius: '8px' }}>
+              <div style={{ fontSize: '14px', fontWeight: '600', color: '#166534', marginBottom: '12px' }}>
+                Layout Calculation
+              </div>
+              <div style={{ fontSize: '14px', color: '#166534', marginBottom: '8px' }}>
+                {spacing.layoutDescription}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px', color: '#15803D' }}>
+                <div>Gap between prints: <strong>{spacing.gapSize}m</strong></div>
+                <div>Rolls needed: <strong>{spacing.rollsNeeded}</strong></div>
+                <div>Efficiency: <strong>{spacing.efficiency}%</strong></div>
+                {spacing.topBottomMargin > 0 && (
+                  <div>Top/bottom margin: <strong>{spacing.topBottomMargin}cm</strong></div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {spacing && !spacing.isValid && (
+            <div style={{ padding: '16px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '8px' }}>
+              <div style={{ fontSize: '14px', color: '#DC2626' }}>
+                {spacing.error}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Quote Summary */}
